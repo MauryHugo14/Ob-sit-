@@ -1,0 +1,267 @@
+---
+title: "Obésité"
+author: "Hugo Maury"
+date: "`r format (Sys.time(),'%d %B %Y')`"
+fontsize : 7pt
+documentclass: "article"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+  rmarkdown::html_document:
+    theme : journal
+toc-title: "Sommaire"
+---
+
+\newpage
+
+*Sources :* 
+
+* https://www.kaggle.com/datasets/suleymansulak/obesity-dataset/data
+
+Les analyses ont été réalisées grâce au logiciel Rstudio version 4.0.5.
+
+\newpage
+
+*Résumé*
+
+L'obésité est une maladie grave et chronique résultant d'interactions génétiques et environnementales. Elle se définit comme une quantité excessive de tissu graisseux dans le corps, préjudiciable à la santé. Les principaux facteurs de risque de l'obésité incluent les habitudes sociales, psychologiques et alimentaires. L'obésité constitue un problème de santé majeur pour tous les groupes d'âge à travers le monde. Actuellement, plus de 2 milliards de personnes dans le monde sont obèses ou en surpoids. Les recherches ont montré que l'obésité peut être prévenue. Dans cette étude, des méthodes d'intelligence artificielle ont été utilisées pour identifier les individus à risque d'obésité. Une enquête en ligne a été menée auprès de 1610 personnes pour créer un jeu de données sur l'obésité. Afin d'analyser les données de l'enquête, quatre méthodes couramment utilisées en intelligence artificielle dans la littérature, à savoir les réseaux de neurones artificiels, les k plus proches voisins, les forêts aléatoires et les machines à vecteurs de support, ont été appliquées après un pré-traitement des données. À la suite de cette analyse, les classes d'obésité ont été prédites avec des taux de succès de 74,96 %, 74,03 %, 74,03 % et 87,82 % respectivement. La méthode des forêts aléatoires a été la plus performante pour ce jeu de données, classant l'obésité avec un taux de succès de 87,82 %.
+
+**Mots-clés** : Jeu de données sur l'obésité, méthodes d'intelligence artificielle, réseau de neurones artificiels, machine à vecteurs de support, k plus proches voisins, forêt aléatoire.
+
+
+\newpage
+
+# ) Présentation des données
+
+```{r pack_donnees, include = FALSE, echo = FALSE}
+# -- Packages --
+library(readxl)
+library(gt)
+library(dplyr)
+library(caret)
+library(glmnet)
+library(nnet)
+library(gtsummary)
+library(car)
+
+# -- Impcaret# -- Importation des données --
+dataset = read_xlsx("Obesity_Dataset.xlsx")
+# Modification de certaine colonne en format 'num'
+dataset$Number_of_Main_Meals_Daily = as.numeric(dataset$Number_of_Main_Meals_Daily)
+dataset$Physical_Excercise = as.numeric(dataset$Physical_Excercise)
+
+# -- Renommer les variables en français --
+traduction = c("Sexe", "Age", "Taille", "Famille_en_surpoids", "Consommation_fastfood", "Fréquence_consommation_légumes", "Nombre_repas_quotidien",
+               "Consommation_alimentaire_entre_repas", "Tabagisme", "consommation_liquide_quotidienne", "Calcul_apport_calorique", "Activite_physique",
+               "Emploi_du_temps_dédié_é_la_technologie", "Type_transport_utilisé", "Classe")
+var = 1
+for (colonne in names(dataset)) {
+  # Renommer les colonnes en utilisant la traduction
+  dataset <- dataset %>% rename(!!traduction[var] := all_of(colonne))
+  var = var + 1
+}
+
+```
+
+
+```{r tab_recap, echo=FALSE}
+tableau_resume <- dataset %>% mutate(Sexe = ifelse(Sexe == 1, "Homme", "Femme"),
+                                     Famille_en_surpoids = ifelse(Famille_en_surpoids == 1, "Oui", "Non"),
+                                     Consommation_fastfood = ifelse(Consommation_fastfood == 1, "Oui", "Non"),
+                                     Fréquence_consommation_légumes = ifelse(Fréquence_consommation_légumes == 1, "Rare",
+                                                                             ifelse(Fréquence_consommation_légumes == 2, "Parfois", "Souvent")),
+                                     Nombre_repas_quotidien = ifelse(Nombre_repas_quotidien == 1, "1-2",
+                                                                     ifelse(Nombre_repas_quotidien == 2, "3", "4 ou +")),
+                                     Consommation_alimentaire_entre_repas = ifelse (Consommation_alimentaire_entre_repas == 1, "Rare",
+                                                                                    ifelse(Consommation_alimentaire_entre_repas == 2, "Parfois",
+                                                                                           ifelse(Consommation_alimentaire_entre_repas == 3, "Généralement", "Souvent"))),
+                                     Tabagisme = ifelse(Tabagisme == 1, "Oui", "Non"),
+                                     consommation_liquide_quotidienne = ifelse(consommation_liquide_quotidienne == 1, "> 1L",
+                                                                               ifelse(consommation_liquide_quotidienne == 2, "1-2L", "3L ou +")),
+                                     Calcul_apport_calorique = ifelse(Calcul_apport_calorique == 1, "Oui", "Non"),
+                                     Activite_physique = ifelse(Activite_physique == 1, "Pas de practique",
+                                                                ifelse(Activite_physique == 2, "1-2 jours",
+                                                                       ifelse(Activite_physique == 3, "3-4 jours",
+                                                                              ifelse(Activite_physique == 4, "5-6 jours", "7 jours")))),
+                                     Emploi_du_temps_dédié_é_la_technologie = ifelse(Emploi_du_temps_dédié_é_la_technologie == 1, "0-2 heures",
+                                                                                     ifelse(Emploi_du_temps_dédié_é_la_technologie == 2, "3-5 heures", "6 ou +")),
+                                     Type_transport_utilisé = ifelse(Type_transport_utilisé == 1, "Automobile",
+                                                                     ifelse(Type_transport_utilisé == 2, "Cyclomoteur",
+                                                                            ifelse(Type_transport_utilisé == 3, "Vélo",
+                                                                                   ifelse(Type_transport_utilisé == 4, "Transport public", "Marche")))),
+                                         Classe = factor(Classe, levels = c(1, 2, 3, 4), labels = c("Sous-nutrition", "Normal", "Surpoids", "Obésité")),
+)%>%
+ tbl_summary(
+    by = Classe, 
+    statistic = list(all_categorical() ~ "{n} ({p}%)") # pourcentage pour les variables catégorielles
+    ) %>%
+  as_gt() %>% # Convertir en objet gt pour personnalisation
+  tab_header(
+    title = "Distribution des caractéristiques de l'obésité"
+  )
+
+# Afficher le tableau
+tableau_resume
+
+```
+
+\newpage
+
+# ) Modèle logistique
+
+```{r, echo=FALSE}
+# On sépare les données en données d'entraînements et données de tests
+trainIndex = dataset$Classe %>% createDataPartition(p=0.7, times=1, list = FALSE)
+train = dataset[trainIndex,]
+test = dataset[-trainIndex,]
+```
+
+
+## ) Régression logistique multinomiale
+
+Voici les Odds Ratio du modèle :
+
+
+```{r, echo=FALSE}
+# Convertir la variable `Classe` en facteur
+train$Classe <- as.factor(train$Classe)
+
+# Ajuster le modèle multinomial
+model1 <- multinom(Classe ~ ., data = train)
+
+# Utiliser AIC pour effectuer une sélection de variables
+model_step <- step(model1, direction = "backward")
+summary(model_step)
+model1 = stepAIC(model1, direction = "both", k = 10, trace=FALSE)
+
+# Extraire les coefficients du modèle
+coefficients <- summary(model1)$coefficients
+
+# Faire des prédictions sur les données de test
+predictions <- predict(model1, newdata = test)
+
+# Calculer les odds ratios en prenant l'exponentielle des coefficients
+odds_ratios <- exp(coefficients)
+
+# Afficher les odds ratios
+print(odds_ratios)
+# Extraire les erreurs standard des coefficients
+std_errors <- summary(model1)$standard.errors
+
+# Calculer les intervalles de confiance pour les odds ratios (95%)
+ci_lower <- exp(coefficients - 1.96 * std_errors)
+ci_upper <- exp(coefficients + 1.96 * std_errors)
+
+# Créer un tableau de résumé pour les odds ratios et les intervalles de confiance
+odds_ratios_df <- data.frame(
+  Variable = rownames(coefficients),
+  Odds_Ratio = exp(coefficients),
+  CI_Lower = ci_lower,
+  CI_Upper = ci_upper
+)
+
+print(odds_ratios_df)
+
+```
+
+Voici la matrice de confusion :
+
+```{r, echo=FALSE}
+
+
+# Créer une matrice de confusion
+confusion_matrix <- table(Predicted = predictions, Actual = test$Classe)
+print(confusion_matrix)
+
+# Exemple de matrice de confusion
+confusion_matrix <- table(Predicted = predictions, Actual = test$Classe)
+
+# Calculer le nombre de prédictions correctes (diagonale de la matrice)
+correct_predictions <- sum(diag(confusion_matrix))
+
+# Calculer le nombre total d'observations (toutes les cellules de la matrice)
+total_predictions <- sum(confusion_matrix)
+
+# Calculer l'accuracy
+accuracy <- correct_predictions / total_predictions
+
+# Afficher l'accuracy
+print(paste("L'accuracy est de", round(accuracy, 4)))
+
+```
+
+
+
+\newpage
+
+## Prédiction pour Hugo
+```{r, echo=FALSE}
+new_observation <- data.frame(
+  Sexe = 1,                          # 1 pour Homme, 2 pour Femme
+  Age = 23,                                                    # Age en années
+  Taille = 169,                                                # Taille en cm
+  Famille_en_surpoids = 2,           # 1: Oui, 2: Non
+  Consommation_fastfood = 1,         # 1: Oui, 2: Non
+  Fréquence_consommation_légumes = 2, # 1: Rarement, 2: Parfois, 3: Toujours
+  Nombre_repas_quotidien = 2,     # Valeurs de 1, 2 ou 3
+  Consommation_alimentaire_entre_repas =3,
+  Tabagisme = 2,
+  consommation_liquide_quotidienne = 2,
+  Calcul_apport_calorique = 2,
+  Activite_physique = 3,    # Niveau d'activité physique, etc.
+  Emploi_du_temps_dédié_é_la_technologie = 3,
+  Type_transport_utilisé = 1,
+  Classe = 2
+)
+
+
+
+# Faire des prédictions sur les données de test
+predictions_hugo <- predict(model1, newdata = new_observation)
+
+# Créer une matrice de confusion
+confusion_matrix <- table(Predicted = predictions_hugo, Actual = new_observation$Classe)
+print(confusion_matrix)
+```
+
+\newdata
+
+## Prédiction pour Amandine
+```{r, echo=FALSE}
+new_observation <- data.frame(
+  Sexe = 2,                          # 1 pour Homme, 2 pour Femme
+  Age = 23,                                                    # Age en années
+  Taille = 149,                                                # Taille en cm
+  Famille_en_surpoids = 1,           # 1: Oui, 2: Non
+  Consommation_fastfood = 1,         # 1: Oui, 2: Non
+  Fréquence_consommation_légumes = 2, # 1: Rarement, 2: Parfois, 3: Toujours
+  Nombre_repas_quotidien = 2,     # Valeurs de 1, 2 ou 3
+  Consommation_alimentaire_entre_repas = 2,
+  Tabagisme = 2,
+  consommation_liquide_quotidienne = 1,
+  Calcul_apport_calorique = 2,
+  Activite_physique = 0,    # Niveau d'activité physique, etc.
+  Emploi_du_temps_dédié_é_la_technologie = 3,
+  Type_transport_utilisé = 1,
+  Classe = 2
+)
+
+
+# Faire des prédictions sur les données de test
+predictions_ama <- predict(model1, newdata = new_observation)
+
+# Créer une matrice de confusion
+confusion_matrix <- table(Predicted = predictions_ama, Actual = new_observation$Classe)
+print(confusion_matrix)
+```
+
+
+
+
+
+
+
+
+
+
